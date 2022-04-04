@@ -1,0 +1,630 @@
+---
+title: "Seasonal Package Primer with Hands-on Examples"
+author: "Brian C. Monsell"
+date: "4/7/2022"
+output: slidy_presentation
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+```
+
+## Outline
+
+- Seasonal Package Basics
+- Running One Series
+- Running Multiple Series
+- Resources
+
+## I expect that you 
+
+- Know a little about R 
+  - lists and time series
+- Know a little about running X-13ARIMA-SEATS
+  - input and output files
+  
+## Seasonal Seasonal Package
+
+- Allows users to run X-13ARIMA-SEATS with R
+- Data input - time series objects
+- Output - part of the output of the package
+
+## X-13ARIMA-SEATS Input Files
+
+- Data
+- Input Specification Files
+- User defined Regression and Prior Adjustment Factors
+- Metafiles
+  
+## X-13ARIMA-SEATS Output Files
+
+- Output
+- Graphics
+- Saved tables
+- Diagnostics (UDG and Log)
+- Error
+
+## X-13ARIMA Spec File
+
+```
+series{
+  title="International Airline Passengers "
+  start=1949.01   file = "airline.txt"
+}
+transform{ function=auto }
+estimate{ }
+regression{ aictest=(td easter) }
+arima{  model = (0 1 1)(0 1 1)  }
+outlier{ }
+x11{ save = (d10 d11 d12 d13 d16 e18) }
+spectrum{ }
+```
+
+## Specifying Arguments in Seasonal
+
+To set a specific argument from an X-13ARIMA-SEATS specification, use 
+
+```
+spec.argument = value
+```
+
+Examples:
+
+```
+arima.model = “(0 1 1)(0 1 1)”
+forecast.maxlead = 60
+x11.siglim = c(1.5, 3.0)
+```
+
+## Slide with R Output
+
+```{r air_example, echo = TRUE}
+# run Airline Series, 
+# do X-11 seasonal adjustment
+
+m_air <- 
+    seasonal::seas(AirPassengers, x11="", 
+                   arima.model="(0 1 1)(0 1 1)")
+```
+
+## Default settings for seasonal package
+
+- Automatic transformation identification
+- Automatic outlier identification
+- AICC tests for trading day, Easter regressors
+- Automatic model identification
+- SEATS seasonal adjustment
+
+## Override default settings
+
+- Specify transformation 
+  - `transform.function = “log”`
+- Set `outlier = NULL`
+- Set `regression.aictest = NULL`
+- Specify an ARIMA model
+  - `arima.model = “(0 1 1)(0 1 1)”`
+- Specify an X-11 argument or set `x11 = “ “`
+
+## Difference between NULL and " "
+
+`outlier = “ “` \
+Use the empty spec – `outlier{ }`
+
+`outlier = NULL` \
+Do not include `outlier` spec in run
+
+## Seasonally adjusting one series
+
+- `import.ts` function
+  - Reads data from external files in datevalue format (default) 
+  - Output is a ts object
+
+## import.ts example
+
+```{r UN_example, echo = TRUE}
+# read unemployed males 
+n3000013 <-
+   seasonal::import.ts("data/n3000013.dat")
+```
+
+## Seasonally adjusting one series
+
+- `seas` function
+  - Generates the seasonal adjustment based on the options provided
+- Output is a seas object – a list that has 
+  - input
+  - diagnostics
+  - output
+  
+## seas example
+
+```{r UN_seas, echo = TRUE}
+setwd("X:/talks/RPrimer_April2022")
+# seasonally adjust n3000013
+n3000013_seas <- seasonal::seas(n3000013, 
+    series.span = "2003.1,",
+    arima.model = "(0 1 1)(0 1 1)", forecast.maxlead = 60, 
+    estimate.exact = "arma", estimate.maxiter = 10000, 
+    check.print = c("none", "+acf", "+acfplot", 
+                    "+normalitytest"), 
+    regression.aictest = NULL, outlier.types = "all",
+    regression.variables = c("ls2008.may", "tc2020.apr"))
+```
+
+## out function
+
+- Shows output from seasonal adjustment run in a browser
+
+```{r UN_out, echo = TRUE}
+seasonal::out(n3000013_seas)
+```
+
+## Structure of the seas object
+
+```{r UN_seas_structure, echo = TRUE}
+names(n3000013_seas)
+```
+
+## Input, seas object
+
+`n3000013_seas$spc`
+
+- Spec file used in the seas run
+- Spec input is stored as a list
+
+`n3000013_seas$call`
+- Preserves the call to seasonal
+
+## input structures, seas object
+
+```{r UN_spc_structure, echo = TRUE}
+names(n3000013_seas$spc)
+n3000013_seas$spc$regression
+n3000013_seas$spc$arima
+```
+
+## input structures, seas object
+
+```{r UN_call_structure, echo = TRUE}
+n3000013_seas$call
+```
+
+## Data structures, seas object
+
+```{r UN_data1_structure, echo = TRUE}
+names(n3000013_seas$series)
+
+head(n3000013_seas$series$s10)
+```
+
+## Data structures, seas object
+
+```{r UN_data2_structure, echo = TRUE}
+colnames(n3000013_seas$data)
+
+head(n3000013_seas$data[,2])
+```
+## Data structures, seas object
+
+```{r UN_data3_structure, echo = TRUE}
+tail(n3000013_seas$x)
+```
+
+## Seas Functions: Data Extraction
+
+- seasonal::final
+  - Extracts final seasonal adjustment
+
+- seasonal::series
+  - Extracts saved series from seas object
+  - Specify either a table name (`“seasonal”`) or table abbreviation (`“d10”`)  
+  - If table not in the seas object, seas will be reevaluated to get the series
+
+
+## Seas Functions: Data Extraction
+
+```{r UN_extract, echo = TRUE}
+# extract final seasonal adjustment
+n3000013_sa    <- seasonal::final(n3000013_seas)
+n3000013_trend <- seasonal::trend(n3000013_seas)
+head(cbind(n3000013_seas$x, n3000013_sa, n3000013_trend))
+
+# extract SEATS seasonal factors
+n3000013_sf    <- seasonal::series(n3000013_seas, "s10")
+head(n3000013_sf)
+```
+
+## Plot of Seasonal Factors
+
+```{r UN_monthplot, echo = TRUE, dev='png'}
+monthplot(n3000013_sf)
+```
+
+## Plot of ori, SA, trend
+
+```{r UN_plot, echo = TRUE, dev='png'}
+this_x     <- window(n3000013_seas$x, start = c(2016, 1))
+this_sa    <- window(n3000013_sa, start = c(2016, 1))
+this_trend <- window(n3000013_trend, start = c(2016, 1))
+plot(this_x, main = "n3000013: SA and Trend", ylab = "n3000013",
+     col = "grey")
+lines(this_sa, col = "blue")
+lines(this_trend, col = "brown")
+```
+
+## Seas Object: Diagnostics
+
+- `n3000013_seas$udg`
+  - Contains output from X-13ARIMA-SEATS udg file
+  - “Unified Diagnostics File”
+  - Uses a `keyword: value` rubric to store model and seasonal adjustment diagnostics
+
+## Example UDG File
+
+```
+date: Sep 22, 2016  
+time: 09.07.36 
+version: 1.1
+build: 34
+output: html
+srstit: X-13ARIMA-SEATS run of airline
+srsnam: airline                                
+freq:    12
+span:  1st month,1949 to 12th month,1960
+constant:     0.0000000000E+00
+transform: Log(y)
+nfcst:    60
+ciprob:     0.950000
+lognormal: no
+mvval:     0.1000000000E+10
+iqtype: ljungbox
+samode: multiplicative seasonal adjustment
+```
+
+## udg Function (First 50)
+
+```{r UN_udg1, echo = TRUE}
+head(names(seasonal::udg(n3000013_seas)), n = 50)
+```
+## udg Function
+
+```{r UN_udg2, echo = TRUE}
+seasonal::udg(n3000013_seas,"nfcst")
+
+seasonal::udg(n3000013_seas,"output")
+
+seasonal::udg(n3000013_seas,"qsori")
+as.vector(seasonal::udg(n3000013_seas,"qsori"))
+
+```
+## udg Function
+
+```{r UN_udg3, echo = TRUE}
+n3000013_seas$udg[["nreg"]]
+seasonal::udg(n3000013_seas,"nreg")
+```
+
+## Seas Object: model
+
+```{r UN_model, echo = TRUE}
+names(n3000013_seas$model)
+n3000013_seas$model$regression
+n3000013_seas$model$arima
+```
+
+## Seas Object: est
+
+```{r UN_est1, echo = TRUE}
+names(n3000013_seas$est)
+```
+
+## Seas Object: est
+
+```{r UN_est2, echo = TRUE}
+n3000013_seas$est$reg
+n3000013_seas$est$reg$estimate
+as.numeric(n3000013_seas$est$reg$estimate)
+```
+
+## Import spec files: import.spc
+
+```{r UN_import1, echo = TRUE}
+# import seasonal options from specification file
+
+n3000013_import_spc <-  
+    seasonal::import.spc("n3000013.spc")
+
+names(n3000013_import_spc)
+```
+
+## Import spec files: import.spc
+
+```{r UN_import2, echo = TRUE}
+n3000013_import_spc$x
+
+n3000013_import_spc$seas
+```
+
+## Import spec files: import.spc
+
+```{r UN_import3, echo = TRUE}
+# evaluate separate elements of n3000013_import_spc
+library(seasonal)
+
+eval(n3000013_import_spc$x)
+n3000013_seas_from_file <- 
+   eval(n3000013_import_spc$seas)
+
+names(n3000013_seas_from_file)
+```
+
+## Running More Than One Series
+
+- Can use list or mts (multiple time series) objects
+- Run the `seas` function on the object
+  - Old way: lists with the lapply function
+  - New way: process lists and mts objects directly
+
+## Running More Than One Series
+
+```{r UN_list, echo = TRUE}
+
+UN_data_list <- 
+   list(n3000013 = n3000013,
+        n3000014 = seasonal::import.ts("data/n3000014.dat"),
+        n3000025 = seasonal::import.ts("data/n3000025.dat"),
+        n3000026 = seasonal::import.ts("data/n3000026.dat"))
+
+#
+# UN_data_list$n3000013 and
+# UN_data_list[[1]] are equivalent
+#
+```
+
+## Running More Than One Series
+
+```{r UN_list2, echo = TRUE}
+
+UN_airline_seas <- 
+    seasonal::seas(UN_data_list, x11 = "", 
+        check.print = c("none", "+acf", "+acfplot",
+                        "+normalitytest"), 
+        regression.aictest = NULL, 
+        outlier.types = "all",
+        arima.model = "(0 1 1)(0 1 1)")
+
+names(UN_airline_seas)
+```
+
+## Running More than One Series
+
+- Output is a list of seas objects
+  - Elements have the same names as the list object
+- To extract output or diagnostics, you can
+  - Apply functions to the individual elements
+  - Use `lapply` or `for` loops on the list as a whole
+
+## Examples
+
+- Get transformation information from list
+- Specify options for individual series using list
+- Using mts objects with seasonal
+- Composite seasonal adjustment with seasonal
+
+## Transformation Choice
+
+```{r UN_trans, echo = TRUE}
+UN_names <- names(UN_data_list)
+
+# get transformation choice, AICC 
+
+UN_AICC_nolog  <- 
+   lapply(UN_airline_seas, function(x)
+          try(seasonal::udg(x, "aictest.trans.aicc.nolog")))
+UN_AICC_log    <- 
+   lapply(UN_airline_seas, function(x)
+          try(seasonal::udg(x, "aictest.trans.aicc.log")))
+UN_AICC_trans  <- 
+   lapply(UN_airline_seas, function(x)
+          try(seasonal::udg(x, "aictrans")))
+
+# Generate difference between log and no log AICC
+UN_AICC_diff   <- list()
+
+for (i in 1:length(UN_names)) {
+    this_series <- UN_names[i]
+    UN_AICC_diff[[this_series]] <-
+        UN_AICC_log[[this_series]] - UN_AICC_nolog[[this_series]]
+}
+
+# collect items into a data frame
+UN_AICC_df <- 
+    data.frame(nolog = unlist(UN_AICC_nolog), log = unlist(UN_AICC_log), 
+               diff  = unlist(UN_AICC_diff),  trans = unlist(UN_AICC_trans))
+rownames(UN_AICC_df) <- UN_names
+```
+## Transformation Choice
+
+```{r UN_trans2, echo = TRUE}
+UN_AICC_df
+```
+
+## Using mts Objects
+
+```{r UN_mts, echo = TRUE}
+
+# An alternate approach - using mts objects
+
+UN_data_mts <- 
+  cbind(n3000013, 
+        UN_data_list$n3000014, 
+        UN_data_list$n3000025, 
+        UN_data_list$n3000026)
+
+UN_airline_mts_seas <- 
+    seasonal::seas(UN_data_mts, x11 = "", 
+        check.print = c("none", "+acf", "+acfplot",
+                        "+normalitytest"), 
+        regression.aictest = NULL, 
+        outlier.types = "all",
+        arima.model = "(0 1 1)(0 1 1)")
+
+names(UN_airline_mts_seas) <- UN_names
+```
+
+## Specifying options for each series
+
+```{r UN_individual, echo = TRUE}
+UN_individual_seas <- seasonal::seas(UN_data_mts,
+    x11 = "", 
+    check.print = c("none", "+acf", "+acfplot", "+normalitytest"), 
+    regression.aictest = NULL, 
+    outlier.types = "all",
+    arima.model = "(0 1 1)(0 1 1)",
+    list = list(
+        list(transform.function = "none"),
+        list(transform.function = "log"),
+        list(transform.function = "log"),
+        list(transform.function = "log")
+    )
+)
+names(UN_individual_seas)
+```
+
+## Another alternate approach
+
+```{r UN_individual2, echo = TRUE}
+# An alternate approach - specifiying time series within the list
+
+UN_auto_x11_seas <- seasonal::seas(
+    check.print = c("none", "+acf", "+acfplot", "+normalitytest"), 
+    regression.aictest = NULL, 
+    outlier.types = "all",
+    x11.seasonalma = "s3x5",
+    list = list(
+        list(x = UN_data_list$n3000013, transform.function = "none"),
+        list(x = UN_data_list$n3000014, transform.function = "log"),
+        list(x = UN_data_list$n3000025, transform.function = "log"),
+        list(x = UN_data_list$n3000026, transform.function = "log")
+    )
+)
+
+names(UN_auto_x11_seas)
+```
+
+## Composite seasonal adjustment
+
+- Two components - A and B
+- Indirect adjustment: SA(A) + SA(B)
+- Direct adjustment: SA(A + B)
+
+## Composite seasonal adjustment in seasonal package
+
+```{r UN_composite, echo = TRUE}
+UN_composite_seas <- seasonal::seas(UN_data_mts,
+     x11 = "", 
+     check.print = c("none", "+acf", "+acfplot", "+normalitytest"), 
+     regression.aictest = NULL, 
+     outlier.types = "all",
+     arima.model = "(0 1 1)(0 1 1)",
+     series.comptype = "add",
+     list = list(
+         list(transform.function = "none"),
+         list(transform.function = "log"),
+         list(transform.function = "log"),
+         list(transform.function = "log")
+     ),
+     composite = 
+       list(arima.model = "(0 1 1)(0 1 1)", x11 = "",
+            check.print = c("none", "+acf", "+acfplot", "+normalitytest"),
+       regression.aictest = NULL, 
+       outlier.types = "all")
+)
+
+names(UN_composite_seas)
+```
+
+## A Note About Composite Adjustment
+
+- Some functions do not have access to composite element
+  - out
+  - series
+- Will be in the next build of seasonal
+  
+## The out argument
+
+```{r UN_out1, echo = TRUE}
+UN_composite_out_seas <- seasonal::seas(UN_data_mts,
+     x11 = "", 
+     check.print = c("none", "+acf", "+acfplot", "+normalitytest"), 
+     regression.aictest = NULL, 
+     outlier.types = "all",
+     arima.model = "(0 1 1)(0 1 1)",
+     series.comptype = "add",
+     list = list(
+         list(transform.function = "none"),
+         list(transform.function = "log"),
+         list(transform.function = "log"),
+         list(transform.function = "log")
+     ),
+     composite = 
+       list(arima.model = "(0 1 1)(0 1 1)", x11 = "",
+            check.print = c("none", "+acf", "+acfplot", "+normalitytest"),
+       regression.aictest = NULL, 
+       outlier.types = "all"),
+     out = TRUE
+)
+
+tf <- tempfile(fileext = ".html")
+writeLines(UN_composite_out_seas$composite$out, tf)
+browseURL(tf)
+```
+
+## The out argument
+
+```{r UN_out2, echo = TRUE}
+m_air_out <- seasonal::seas(AirPassengers,
+                    x11="", out = TRUE,
+                    arima.model="(0 1 1)(0 1 1)")
+
+names(m_air)
+names(m_air_out)
+
+object.size(m_air)
+object.size(m_air_out)
+```
+
+## References
+
+- Seasonal Adjustment by X-13ARIMA-SEATS in R by Chistophe Sax and Dick Eddelbuettel
+  - Excellent introduction
+  - Details of a graphical user interface
+  - Large scale production use
+  - `x13binary` package
+  
+<https://cran.r-project.org/web/packages/seasonal/vignettes/seas.pdf>
+  
+## References
+
+- Adjusting Multiple Series
+  - Covers all aspects of the topic
+  
+<https://cran.r-project.org/web/packages/seasonal/vignettes/multiple.html>
+
+## References
+
+- Examples of X-13ARIMA SEATS in R
+  - Gives every example from the X-13ARIMA-SEATS Manual
+- For each example
+  - X-13 code
+  - Equivalent seasonal code
+  - Remarks on the implementation
+  - Allow you to run it yourself
+
+<http://www.seasonal.website/examples.html>
+
+## Thank you for your time
+
+Brian C. Monsell\
+OEUS\
+monsell.brian@bls.gov
